@@ -2,6 +2,8 @@ package GRNOC::TSDS::Writer::Worker;
 
 use Moo;
 
+use GRNOC::TSDS::Aggregate;
+use GRNOC::TSDS::Expire;
 use GRNOC::TSDS::DataType;
 use GRNOC::TSDS::Constants;
 use GRNOC::TSDS::DataDocument;
@@ -312,6 +314,7 @@ sub _consume_messages {
     # gather all messages to process
     my $data_to_process = [];
     my $events_to_process = [];
+    my $aggregates_to_process = [];
 
     # handle every TSDS message that came within the rabbit message
     foreach my $message ( @$messages ) {
@@ -342,10 +345,12 @@ sub _consume_messages {
             next;
         }
 
-        # does it appear to be an event message?
-        if ( $type =~ /^(.+)\.event$/ ) {
+        # does it appear to be an event or aggregate message?
+        if ( $type =~ /^(.+)\.(aggregate|event)$/ ) {
 
             my $data_type_name = $1;
+	    my $message_type = $2;
+
             my $data_type = $self->data_types->{$data_type_name};
 
             # we haven't seen this data type before, re-fetch them
@@ -380,26 +385,36 @@ sub _consume_messages {
                 next;
             }
 
-            my $event_message;
+	    if ( $message_type eq 'event' ) {
 
-            try {
+		my $event_message;
 
-                $event_message = GRNOC::TSDS::Writer::EventMessage->new( data_type => $data_type,
-                                                                         affected => $affected,
-                                                                         text => $text,
-                                                                         start => $start,
-                                                                         end => $end,
-                                                                         identifier => $identifier,
-                                                                         type => $event_type );
-            }
+		try {
+		    
+		    $event_message = GRNOC::TSDS::Writer::EventMessage->new( data_type => $data_type,
+									     affected => $affected,
+									     text => $text,
+									     start => $start,
+									     end => $end,
+									     identifier => $identifier,
+									     type => $event_type );
+		}
+		
+		catch {
+		    
+		    $self->logger->error( $_ );
+		};
+		
+		# include this to our list of events to process if it was valid
+		push( @$events_to_process, $event_message ) if $event_message;
+	    }
 
-            catch {
+	    elsif ( $message_type eq 'aggregate' ) {
 
-                $self->logger->error( $_ );
-            };
+		$message->{'data_type'} = $data_type;
 
-            # include this to our list of events to process if it was valid
-            push( @$events_to_process, $event_message ) if $event_message;
+		push( @$aggregates_to_process, $message );
+	    }
         }
 
         # must be a data message
@@ -467,6 +482,7 @@ sub _consume_messages {
 
         $self->_process_data_messages( $data_to_process ) if ( @$data_to_process > 0 );
         $self->_process_event_messages( $events_to_process ) if ( @$events_to_process > 0 );
+	$self->_process_aggregate_messages( $aggregates_to_process ) if ( @$aggregates_to_process > 0 );
     }
 
     catch {
@@ -477,6 +493,49 @@ sub _consume_messages {
     };
 
     return $success;
+}
+
+sub _process_aggregate_messages {
+
+    my ( $self, $messages ) = @_;
+
+    foreach my $message ( @$messages ) {
+
+	my $data_type = $message->{'type'};
+	my $data_type_name = $data_type->name;
+	my $identifier = $message->{'identifier'};
+
+	$self->logger->info( "Aggregating $data_type_name - $identifier..." );
+
+	my $db = $data_type->database;
+	my $data = $db->get_collection( 'data' );
+	my $start = $data->find( {'identifier' => $identifier} )->fields( {'start' => 1} )->sort( {'start' => 1} )->limit( 1 )->next()->{'start'};
+	my $end = $data->find( {'identifier' => $identifier} )->fields( {'end' => 1} )->sort( {'start' => -1} )->limit( 1 )->next()->{'end'};
+
+	my $aggregator = GRNOC::TSDS::Aggregate->new( lock_dir => '/tmp',
+						      database => $data_type_name,
+						      num_processes => 1,
+						      start => $start,
+						      end => $end,
+						      query => {'identifier' => $identifier},
+						      quiet => 1 );
+
+	$aggregator->_set_config( $self->config );
+	$aggregator->_set_logger( $self->logger );
+	
+	$aggregator->aggregate_data();
+	
+	my $expirator = GRNOC::TSDS::Expire->new( database => $data_type_name,
+						  query => {'identifier' => $identifier},
+						  quiet => 1 );
+
+	$expirator->_set_config( $self->config );
+	$expirator->_set_logger( $self->logger );
+
+	$expirator->expire_data();
+
+	$self->logger->info( "Successfully aggregated $data_type_name - $identifier." );
+    }
 }
 
 sub _process_event_messages {
