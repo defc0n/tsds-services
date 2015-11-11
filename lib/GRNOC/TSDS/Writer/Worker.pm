@@ -501,7 +501,7 @@ sub _process_aggregate_messages {
 
     foreach my $message ( @$messages ) {
 
-	my $data_type = $message->{'type'};
+	my $data_type = $message->{'data_type'};
 	my $data_type_name = $data_type->name;
 	my $identifier = $message->{'identifier'};
 
@@ -513,6 +513,8 @@ sub _process_aggregate_messages {
 	my $end = $data->find( {'identifier' => $identifier} )->fields( {'end' => 1} )->sort( {'start' => -1} )->limit( 1 )->next()->{'end'};
 
 	my $aggregator = GRNOC::TSDS::Aggregate->new( lock_dir => '/tmp',
+						      config => $self->config,
+						      logger => $self->logger,
 						      database => $data_type_name,
 						      num_processes => 1,
 						      start => $start,
@@ -520,17 +522,14 @@ sub _process_aggregate_messages {
 						      query => {'identifier' => $identifier},
 						      quiet => 1 );
 
-	$aggregator->_set_config( $self->config );
-	$aggregator->_set_logger( $self->logger );
-	
 	$aggregator->aggregate_data();
 	
 	my $expirator = GRNOC::TSDS::Expire->new( database => $data_type_name,
+						  config => $self->config,
+						  logger => $self->logger,
 						  query => {'identifier' => $identifier},
+						  pretend => 0,
 						  quiet => 1 );
-
-	$expirator->_set_config( $self->config );
-	$expirator->_set_logger( $self->logger );
 
 	$expirator->expire_data();
 

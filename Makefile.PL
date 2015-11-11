@@ -21,7 +21,7 @@ test_jenkins : pure_all
 	$(FULLPERL) t/TEST $(TEST_VERBOSE) --formatter=TAP::Formatter::Console
 
 par :
-	pp -M utf8 -M XML::LibXML::SAX -I lib/ -c -x bin/tsds_writer -o tsds_writer
+	pp -M utf8 -M XML::LibXML::SAX -M Inline::C -I lib/ -c -x bin/tsds_writer -o tsds_writer
 
     );
 }

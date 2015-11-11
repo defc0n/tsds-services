@@ -63,9 +63,9 @@ has pretend => ( is => 'ro',
 
 ### internal attributes ###
 
-has config => ( is => 'rwp' );
+has config => ( is => 'ro' );
 
-has logger => ( is => 'rwp' );
+has logger => ( is => 'ro' );
 
 has mongo_rw => ( is => 'rwp' );
 
@@ -85,7 +85,7 @@ sub BUILD {
 	my $grnoc_log = GRNOC::Log->new( config => $self->logging_file );
 	my $logger = GRNOC::Log->get_logger();
 	
-	$self->_set_logger( $logger );
+	$self->logger( $logger );
     }
 
     # create and store config object
@@ -94,7 +94,7 @@ sub BUILD {
 	my $config = GRNOC::Config->new( config_file => $self->config_file,
 					 force_array => 0 );
 	
-	$self->_set_config( $config );
+	$self->config( $config );
     }
 
     # create and store json object
