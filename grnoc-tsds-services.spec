@@ -37,8 +37,6 @@ Requires: perl-Template-Toolkit
 Requires: perl-HTML-Parser
 Requires: perl-XML-Writer
 Requires: perl-WWW-Mechanize-PhantomJS >= 0.11-2
-Requires: perl-Inline >= 0.77
-Requires: perl-Inline-C
 Requires: perl-Math-Round
 Requires: perl-Test-Deep
 Requires: perl-Tie-IxHash
