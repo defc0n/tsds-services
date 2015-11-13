@@ -13,10 +13,10 @@ BuildRequires: mod_perl-devel
 BuildRequires: perl-Test-Simple
 Requires: perl >= 5.8.8
 Requires: python >= 2.6.6
-Requires: gcc
 Requires: mod_perl
 Requires: perl-rrdtool
 Requires: perl-boolean
+Requires: perl-GRNOC-TSDS-Aggregate-Histogram
 Requires: perl-GRNOC-Config >= 1.0.7
 Requires: perl-GRNOC-WebService >= 1.2.8
 Requires: perl-GRNOC-WebService-Client >= 1.2.2
@@ -78,11 +78,6 @@ GRNOC TSDS Services
 %build
 %{__perl} Makefile.PL PREFIX="%{buildroot}%{_prefix}" INSTALLDIRS="vendor"
 make
-
-%post
-
-# this will build the Inline::C bindings in proper install location
-%{__perl} %{perl_vendorlib}/GRNOC/TSDS/Aggregate/Histogram.pm
 
 %install
 rm -rf $RPM_BUILD_ROOT
@@ -222,7 +217,6 @@ rm -rf $RPM_BUILD_ROOT
 %{perl_vendorlib}/GRNOC/TSDS.pm
 %{perl_vendorlib}/GRNOC/TSDS/Aggregate.pm
 %{perl_vendorlib}/GRNOC/TSDS/SearchIndexer.pm
-%{perl_vendorlib}/GRNOC/TSDS/Aggregate/Histogram.pm
 %{perl_vendorlib}/GRNOC/TSDS/Constants.pm
 %{perl_vendorlib}/GRNOC/TSDS/Constraints.pm
 %{perl_vendorlib}/GRNOC/TSDS/DataService.pm

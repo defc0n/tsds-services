@@ -48,7 +48,6 @@ init.d/tsds_writer
 INSTALL.md
 lib/GRNOC/TSDS.pm
 lib/GRNOC/TSDS/Aggregate.pm
-lib/GRNOC/TSDS/Aggregate/Histogram.pm
 lib/GRNOC/TSDS/Constants.pm
 lib/GRNOC/TSDS/Constraints.pm
 lib/GRNOC/TSDS/DataDocument.pm
@@ -116,7 +115,6 @@ t/conf/databases/tsdstest.json
 t/conf/extra.conf.in
 t/conf/logging.conf
 t/conf/sphinx.conf.example
-t/histogram.t
 t/query_syntax.t
 t/TEST
 www/admin.cgi
