@@ -1,7 +1,7 @@
 #--------------------------------------------------------------------
 #----- GRNOC TSDS MetaData DataService Library
 #-----
-#----- Copyright(C) 2015 The Trustees of Indiana University
+#----- Copyright(C) 2016 The Trustees of Indiana University
 #--------------------------------------------------------------------
 #----- $HeadURL: svn+ssh://svn.grnoc.iu.edu/grnoc/tsds/services/trunk/lib/GRNOC/TSDS/DataService/MetaData.pm $
 #----- $Id: MetaData.pm 39750 2015-10-16 13:23:46Z daldoyle $
@@ -705,6 +705,7 @@ sub add_measurement_type {
     my $measurement_type  = $args{'name'};
     my $label = $args{'label'};
     my $ignore_si = $args{'ignore_si'} || 0;
+    my $storage = $args{'storage'} || "default";
     my $required_meta_fields = $args{'required_meta_field'};
     my $search_weight;
     $search_weight = $self->parse_int($args{'search_weight'}) if(exists($args{'search_weight'}));
@@ -798,6 +799,7 @@ sub add_measurement_type {
     $db->get_collection( 'metadata' )->insert({ 
         label         => $label,
         ignore_si     => $ignore_si,
+	storage       => $storage,
         meta_fields   => $meta_fields,
         search_weight => $search_weight
     });
