@@ -17,11 +17,19 @@ has 'data_type' => ( is => 'ro',
 
 has 'time' => ( is => 'ro',
                 isa => NonNegativeInteger,
-                required => 1 );
+                required => 0 );
+
+has 'start' => ( is => 'ro',
+                 isa => NonNegativeInteger,
+                 required => 0 );
+
+has 'end' => ( is => 'ro',
+               isa => NonNegativeInteger,
+               required => 0 );
 
 has 'interval' => ( is => 'ro',
                     isa => PositiveInteger,
-                    required => 1 );
+                    required => 0 );
 
 has 'values' => ( is => 'ro',
                   isa => HashRef,
@@ -43,6 +51,22 @@ sub BUILD {
 
     my ( $self ) = @_;
 
+    # ISSUE=12752 handle default vs sparse mode
+    if ( $self->data_type->storage eq 'default' ) {
+
+        # make sure they passed in a time value
+        die( "Required field 'time' must be given." ) if ( !defined( $self->time ) );
+    }
+
+    elsif ( $self->data_type->storage eq 'sparse' ) {
+
+        # make sure they passed in both a start & end value
+        if ( !defined( $self->start ) || !defined( $self->end ) ) {
+
+            die( "Both 'start' and 'end' fields must be given for sparse storage data type " . $self->data_type->name . "." );
+        }
+    }
+
     # make sure all required meta fields for this data type were given
     $self->_validate_required_meta_fields();
 
@@ -57,6 +81,8 @@ sub _build_data_points {
 
     my $data_type = $self->data_type;
     my $time = $self->time;
+    my $start = $self->start;
+    my $end = $self->end;
     my $values = $self->values;
 
     my $data_points = [];
@@ -65,7 +91,9 @@ sub _build_data_points {
 
         my $data_point = GRNOC::TSDS::DataPoint->new( data_type => $data_type,
                                                       value_type => $value_type,
-                                                      time => $time,
+                                                      defined( $time ) ? ( time => $time ) : (),
+                                                      defined( $start ) ? ( start => $start ) : (),
+                                                      defined( $end ) ? ( end => $end ) : (),
                                                       value => $value,
                                                       interval => $self->interval );
 

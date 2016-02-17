@@ -19,6 +19,8 @@ has metadata_fields => ( is => 'lazy' );
 
 has value_types => ( is => 'lazy' );
 
+has storage => ( is => 'lazy' );
+
 ### attribute builders ###
 
 sub _build_value_types {
@@ -47,6 +49,20 @@ sub _build_metadata_fields {
     die( "No metadata fields found for $name" ) if ( !$fields || !$fields->{'meta_fields'} );
 
     return $fields->{'meta_fields'};
+}
+
+sub _build_storage {
+
+    my ( $self ) = @_;
+
+    my $name = $self->name;
+    my $storage = $collection->find_one( {}, {'storage' => 1} );
+
+    # ISSUE=12111 handle case where this is no metadata collection and/or no document
+    die( "No metadata doc found for $name" ) if ( !$storage );
+
+    # assume default storage if one not set otherwise
+    return $storage->{'storage'} || "default";
 }
 
 1;

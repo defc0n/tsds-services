@@ -307,7 +307,7 @@ sub add_aggregation {
 
     # make sure this aggregation doesn't already exists
     if($self->_agg_exp_exists( col => $agg_col, name => $name )){
-        $self->error("Aggregation named, $name, already exist");
+        $self->error( "An aggregation named \"$name\" already exists in the $measurement_type measurement type.");
         return;
     }
 

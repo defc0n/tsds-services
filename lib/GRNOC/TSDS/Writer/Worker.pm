@@ -443,7 +443,7 @@ sub _consume_messages {
                 try {
 
                     $aggregate_message = GRNOC::TSDS::Writer::AggregateMessage->new( data_type => $data_type,
-                                                                                     time => $time,
+										     time => $time,
                                                                                      interval => $interval,
                                                                                      values => $values,
                                                                                      meta => $meta );
@@ -501,7 +501,9 @@ sub _consume_messages {
             try {
 
                 $data_message = GRNOC::TSDS::Writer::DataMessage->new( data_type => $data_type,
-                                                                       time => $time,
+								       defined( $time ) ? ( time => $time ) : (),
+								       defined( $start ) ? ( start => $start ) : (),
+								       defined( $end ) ? ( end => $end ) : (),
                                                                        interval => $interval,
                                                                        values => $values,
                                                                        meta => $meta );
@@ -727,6 +729,8 @@ sub _process_data_messages {
         my $interval = $message->interval;
         my $data_points = $message->data_points;
         my $time = $message->time;
+	my $start = $message->start;
+	my $end = $message->end;
         my $meta = $message->meta;
 
         # mark this data type as being found
@@ -744,21 +748,37 @@ sub _process_data_messages {
         # never seen this measurement before
         else {
 
+	    my $new_meta = {'meta' => $meta};
+
+	    # default storage type
+	    if ( defined( $time ) ) {
+
+		$new_meta->{'start'} = $time;
+		$new_meta->{'interval'} = $interval;
+	    }
+
+	    # sparse storage type
+	    else {
+
+		$new_meta->{'start'} = $start;
+	    }
+
             # mark this measurement as being found, and include its meta data and start time
-            $unique_measurements->{$data_type->name}{$measurement_identifier} = {'meta' => $meta,
-                                                                                 'start' => $time,
-                                                                                 'interval' => $interval};
+            $unique_measurements->{$data_type->name}{$measurement_identifier} = $new_meta;
         }
 
-        # determine proper start and end time of document
-        my $doc_length = $interval * HIGH_RESOLUTION_DOCUMENT_SIZE;
-        my $start = nlowmult( $doc_length, $time );
-        my $end = $start + $doc_length;
+        # determine proper start and end time of document (if using default storage mode)
+	if ( $data_type->storage eq 'default' ) {
+
+	    my $doc_length = $interval * HIGH_RESOLUTION_DOCUMENT_SIZE;
+	    $start = nlowmult( $doc_length, $time );
+	    $end = $start + $doc_length;
+	}
 
         # determine the document that this message would belong within
         my $document = GRNOC::TSDS::DataDocument->new( data_type => $data_type,
                                                        measurement_identifier => $measurement_identifier,
-                                                       interval => $interval,
+                                                       defined( $interval ) ? ( interval => $interval ) : (),
                                                        start => $start,
                                                        end => $end );
 
