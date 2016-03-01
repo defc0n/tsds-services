@@ -1,6 +1,6 @@
 use strict;
 use warnings;
-use Test::More tests => 58;
+use Test::More tests => 60;
 use GRNOC::Config;
 use GRNOC::Log;
 use GRNOC::TSDS::DataService::Query;
@@ -28,6 +28,14 @@ ok( defined($result) , "query to fetch average output field from Mongo successfu
 
 #validate the result returned
 is( $result ,106114, " average function return value verified ");
+
+# test average with sparse duration storage
+$arr = $query->run_query( query =>'get average(values.output) as meow between ("01/01/1970 00:00:00 UTC","01/01/1970 13:31:00 UTC") from tsdstest_sparse where intf = "ge-0/0/0" ');
+$result = $arr->[0]{'meow'};
+ok( defined( $result ), "query to fetch average output field (sparse duration)" );
+
+#validate the result returned
+is( $result, 75.5, "average function return value verified (sparse duration)" );
 
 # testing other functions like count
 $arr= $query->run_query( query =>'get count(values.input) as Count_Input between ("01/01/1970 00:00:00 UTC","01/01/1970 13:31:00 UTC") from tsdstest where intf = "ge-0/0/0" ');
