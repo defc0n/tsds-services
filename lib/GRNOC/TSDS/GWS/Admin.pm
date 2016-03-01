@@ -87,11 +87,11 @@ sub _init_methods {
                                   description   => 'Boolean (1|0) to determine if SI notation should be used.' );
 
     $method->add_input_parameter( name          => 'storage',
-				  pattern       => '^(default|sparse)$',
+				  pattern       => '^(default|sparse_duration)$',
 				  required      => 0,
 				  multiple      => 0,
 				  default       => 'default',
-				  description   => 'The storage model to use for this measurement type (default or sparse).' );
+				  description   => 'The storage model to use for this measurement type (default or sparse-duration).' );
     
     $self->websvc()->register_method( $method );
     

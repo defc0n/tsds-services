@@ -1,11 +1,11 @@
 {
-  "label" : "tsdstest",
+  "label" : "tsdstest_sparse",
   "meta_fields" : {
     "intf" : { "required" : 1, "ordinal" : 1, "search_weight" : 1 },
     "node" : { "required" : 1, "ordinal" : 2, "search_weight" : 1 }
   },  
-  "type" : "tsdstest",
-  "storage" : "default",
+  "type" : "tsdstest_sparse",
+  "storage" : "sparse_duration",
   "values" : {
     "input" : {
       "ordinal" : 1,

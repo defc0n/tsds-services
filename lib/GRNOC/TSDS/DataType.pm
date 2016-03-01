@@ -56,6 +56,7 @@ sub _build_storage {
     my ( $self ) = @_;
 
     my $name = $self->name;
+    my $collection = $self->database->get_collection( 'metadata' );
     my $storage = $collection->find_one( {}, {'storage' => 1} );
 
     # ISSUE=12111 handle case where this is no metadata collection and/or no document

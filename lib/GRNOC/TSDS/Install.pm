@@ -114,8 +114,41 @@ use constant AGGREGATES => {'interface' => [{'name'     => 'one_hour',
 					    'values' => {'input' => {'hist_res' => 0.1,
 								     'hist_min_width' => 1000000000},
 							 'output' => {'hist_res' => 0.1,
-								      'hist_min_width'=> 1000000000}}}],					   
+								      'hist_min_width'=> 1000000000}}}],
 
+			    'tsdstest_sparse' => [{'name' => 'five_min',
+						   'interval' => 300,
+						   'last_run' => undef,
+						   'meta' => '{}',
+						   'max_age'  => ONE_YEAR * 20,
+						   'eval_position' => 10,
+						   'values' => {'input' => {'hist_res' => 0.1,
+									    'hist_min_width' => 1000000000},
+								'output' => {'hist_res' => 0.1,
+									     'hist_min_width' => 1000000000}}},
+						  
+						  {'name' => 'one_hour',
+						   'interval' => 3600,
+						   'last_run' => undef,
+						   'meta' => '{}',
+						   'max_age'  => ONE_YEAR * 20,
+						   'eval_position' => 20,
+						   'values' => {'input' => {'hist_res' => 0.1,
+									    'hist_min_width' => 1000000000},
+								'output' => {'hist_res' => 0.1,
+									     'hist_min_width'=> 1000000000}}},
+						  
+						  {'name' => 'one_day',
+						   'interval' => 86400,
+						   'last_run' => undef,
+						   'meta' => '{}',
+						   'max_age'  => ONE_YEAR * 20,
+						   'eval_position' => 30,
+						   'values' => {'input' => {'hist_res' => 0.1,
+									    'hist_min_width' => 1000000000},
+								'output' => {'hist_res' => 0.1,
+									     'hist_min_width'=> 1000000000}}}],
+			    
 			    'cpu' => [{'name' => 'one_hour',
 				       'interval' => ONE_HOUR,
 				       'meta' => '{}',
@@ -546,11 +579,15 @@ sub _create_databases {
             }
         }
 
+	# pull out storage mode
+	my $storage = $metadata->{'storage'};
+
         #
         ## add the measurement type with the required fields
         my $res = $self->metadata_ds()->add_measurement_type(
             name => $database_name,
             label => $metadata->{'label'},
+	    storage => $storage,
             required_meta_field => $required_meta_fields
         );
         if(!$res){

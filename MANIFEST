@@ -80,6 +80,7 @@ lib/GRNOC/TSDS/MongoDB.pm
 lib/GRNOC/TSDS/Parser.pm
 lib/GRNOC/TSDS/Parser/Actions.pm
 lib/GRNOC/TSDS/SearchIndexer.pm
+lib/GRNOC/TSDS/SparseDurationDataPoint.pm
 lib/GRNOC/TSDS/Upgrade.pm
 lib/GRNOC/TSDS/Upgrade/1_2_0.pm
 lib/GRNOC/TSDS/Upgrade/1_2_1.pm
@@ -94,6 +95,7 @@ lib/GRNOC/TSDS/Writer.pm
 lib/GRNOC/TSDS/Writer/AggregateMessage.pm
 lib/GRNOC/TSDS/Writer/DataMessage.pm
 lib/GRNOC/TSDS/Writer/EventMessage.pm
+lib/GRNOC/TSDS/Writer/SparseDurationMessage.pm
 lib/GRNOC/TSDS/Writer/Worker.pm
 Makefile.PL
 MANIFEST			This list of files
@@ -112,6 +114,7 @@ t/12search.t
 t/99expire.t
 t/conf/config.xml.example
 t/conf/databases/tsdstest.json
+t/conf/databases/tsdstest_sparse.json
 t/conf/extra.conf.in
 t/conf/logging.conf
 t/conf/sphinx.conf.example

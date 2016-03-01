@@ -1,11 +1,11 @@
-package GRNOC::TSDS::Writer::DataMessage;
+package GRNOC::TSDS::Writer::SparseDurationMessage;
 
 use Moo;
 
-use Types::Standard qw( Str Int HashRef Object );
-use Types::XSD::Lite qw( PositiveInteger NonNegativeInteger );
+use Types::Standard qw( HashRef Object Maybe );
+use Types::Common::Numeric qw( PositiveInt PositiveOrZeroInt );
 
-use GRNOC::TSDS::DataPoint;
+use GRNOC::TSDS::SparseDurationDataPoint;
 
 use Data::Dumper;
 
@@ -15,13 +15,17 @@ has 'data_type' => ( is => 'ro',
                      isa => Object,
                      required => 1 );
 
-has 'time' => ( is => 'ro',
-                isa => NonNegativeInteger,
-                required => 1 );
+has 'start' => ( is => 'ro',
+		 isa => PositiveOrZeroInt,
+		 required => 1 );
+
+has 'end' => ( is => 'ro',
+	       isa => PositiveOrZeroInt,
+	       required => 1 );
 
 has 'interval' => ( is => 'ro',
-                    isa => PositiveInteger,
-                    required => 0 );
+                    isa => PositiveInt,
+                    required => 1 );
 
 has 'values' => ( is => 'ro',
                   isa => HashRef,
@@ -56,18 +60,20 @@ sub _build_data_points {
     my ( $self ) = @_;
 
     my $data_type = $self->data_type;
-    my $time = $self->time;
+    my $start = $self->start;
+    my $end = $self->end;
     my $values = $self->values;
 
     my $data_points = [];
 
     while ( my ( $value_type, $value ) = each( %$values ) ) {
 
-        my $data_point = GRNOC::TSDS::DataPoint->new( data_type => $data_type,
-                                                      value_type => $value_type,
-						      time => $time,
-                                                      value => $value,
-                                                      interval => $self->interval );
+        my $data_point = GRNOC::TSDS::SparseDurationDataPoint->new( data_type => $data_type,
+								    value_type => $value_type,
+								    start => $start,
+								    end => $end,
+								    value => $value,
+								    interval => $self->interval );
 
         push( @$data_points, $data_point );
     }

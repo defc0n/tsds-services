@@ -1,7 +1,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 9;
+use Test::More tests => 15;
 
 use GRNOC::Config;
 use GRNOC::TSDS::MongoDB;
@@ -70,6 +70,9 @@ my $database = $mongo->get_database( $unit_test_db );
 # delete the db since we are going to recreate it (if it exists)
 $database->drop() if $database;
 
+$database = $mongo->get_database( $unit_test_db . "_sparse" );
+$database->drop() if $database;
+
 my $database_dir = "$FindBin::Bin/conf/databases/";
 my $tsds_install = GRNOC::TSDS::Install->new(
   testing_mode => 1,
@@ -87,7 +90,12 @@ foreach my $collection_name ( @$sharded_collections ) {
     my $output = $mongo->_execute_mongo( "db.getSiblingDB( \"$unit_test_db\" ).getCollection( \"$collection_name\" ).stats()" );
     my $sharded = $output->{'sharded'};
 
-    ok( $sharded, "$collection_name is sharded" );
+    ok( $sharded, "$unit_test_db $collection_name is sharded" );
+
+    $output = $mongo->_execute_mongo( "db.getSiblingDB( \"$unit_test_db" . "_sparse" . "\" ).getCollection( \"$collection_name\" ).stats()" );
+    $sharded = $output->{'sharded'};
+
+    ok( $sharded, "$unit_test_db" . "_sparse" . " $collection_name is sharded" );
 }
 
 # make sure temp database/collection is sharded too

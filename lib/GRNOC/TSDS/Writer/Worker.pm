@@ -9,6 +9,7 @@ use GRNOC::TSDS::DataDocument;
 use GRNOC::TSDS::EventDocument;
 use GRNOC::TSDS::Writer::AggregateMessage;
 use GRNOC::TSDS::Writer::DataMessage;
+use GRNOC::TSDS::Writer::SparseDurationMessage;
 use GRNOC::TSDS::Writer::EventMessage;
 
 use MongoDB;
@@ -334,6 +335,7 @@ sub _consume_messages {
 
     # gather all messages to process
     my $data_to_process = [];
+    my $sparse_duration_to_process = [];
     my $events_to_process = [];
     my $aggregates_to_process = [];
 
@@ -459,7 +461,7 @@ sub _consume_messages {
             }
         }
 
-        # must be a data message
+        # must be a certain type of data message (default or sparse duration)
         else {
 
             my $data_type = $self->data_types->{$type};
@@ -496,30 +498,61 @@ sub _consume_messages {
                 next;
             }
 
-            my $data_message;
+	    # handle default storage mode
+	    if ( $data_type->storage eq 'default' ) {
 
-            try {
+		my $data_message;
 
-                $data_message = GRNOC::TSDS::Writer::DataMessage->new( data_type => $data_type,
-								       defined( $time ) ? ( time => $time ) : (),
-								       defined( $start ) ? ( start => $start ) : (),
-								       defined( $end ) ? ( end => $end ) : (),
-                                                                       interval => $interval,
-                                                                       values => $values,
-                                                                       meta => $meta );
-            }
+		try {
+		    		   		    
+		    $data_message = GRNOC::TSDS::Writer::DataMessage->new( data_type => $data_type,
+									   time => $time,
+									   interval => $interval,
+									   values => $values,
+									   meta => $meta );
+		}
 
-            catch {
+		# problem parsing message
+		catch {
+		    
+		    $self->logger->error( $_ );
+		    
+		    # release any outstanding locks we may have had
+		    $self->_release_locks( $acquired_locks );
+		};
 
-                $self->logger->error( $_ );
+		# include this to our list of data to process if it was valid
+		push( @$data_to_process, $data_message ) if $data_message;
+	    }
 
-                # release any outstanding locks
-                $self->_release_locks( $acquired_locks );
-            };
+	    # handle sparse duration storage mode
+	    else {
 
-            # include this to our list of data to process if it was valid
-            push( @$data_to_process, $data_message ) if $data_message;
-        }
+		my $sparse_duration_message;
+
+		try {
+
+		    $sparse_duration_message = GRNOC::TSDS::Writer::SparseDurationMessage->new( data_type => $data_type,
+												start => $start,
+												end => $end,
+												interval => $interval,
+												values => $values,
+												meta => $meta );
+		}
+
+		# problem parsing message
+		catch {
+		    
+		    $self->logger->error( $_ );
+		    
+		    # release any outstanding locks we may have had
+		    $self->_release_locks( $acquired_locks );
+		};
+
+		# include this to our list of data to process if it was valid
+		push( @$sparse_duration_to_process, $sparse_duration_message ) if $sparse_duration_message;
+	    }
+	}
     }
 
     # process all of the data points and events within this message
@@ -547,6 +580,18 @@ sub _consume_messages {
                                            bulk_creates => $bulk_creates,
                                            bulk_updates => $bulk_updates,
                                            acquired_locks => $acquired_locks );
+        }
+
+        # at least one sparse duration data to process
+        if ( @$sparse_duration_to_process > 0 ) {
+
+            $self->logger->debug( "Processing " . @$sparse_duration_to_process . " sparse duration messages." );
+
+            $self->_process_data_messages( messages => $sparse_duration_to_process,
+					   sparse_duration => 1,
+					   bulk_creates => $bulk_creates,
+					   bulk_updates => $bulk_updates,
+					   acquired_locks => $acquired_locks );
         }
 
         # at least one event to process
@@ -680,7 +725,7 @@ sub _process_event_messages {
 
             my @starts = keys( %{$unique_documents->{$data_type}{$type}} );
 
-            foreach my $start ( sort { $a <=> $b }@starts ) {
+            foreach my $start ( sort { $a <=> $b } @starts ) {
 
                 my @ends = keys( %{$unique_documents->{$data_type}{$type}{$start}} );
 
@@ -710,6 +755,7 @@ sub _process_data_messages {
     my $bulk_creates = $args{'bulk_creates'};
     my $bulk_updates = $args{'bulk_updates'};
     my $acquired_locks = $args{'acquired_locks'};
+    my $sparse_duration = $args{'sparse_duration'};
 
     # all unique value types we're handling per each data type
     my $unique_data_types = {};
@@ -721,16 +767,31 @@ sub _process_data_messages {
     # all unique documents we're handling (and their corresponding data points)
     my $unique_documents = {};
 
+    # sort by either time or start parameter depending upon if these are sparse duration messages or not
+    my @messages = sort {
+	
+	if ( $sparse_duration ) {
+	    
+	    $a->start <=> $b->start;
+	}
+	
+	else {
+	    
+	    $a->time <=> $b->time;
+	}
+	
+    } @$messages;
+
     # handle every message sent, ordered by their timestamp in ascending order
-    foreach my $message ( sort { $a->time <=> $b->time } @$messages ) {
+    foreach my $message ( @messages ) {
 
         my $data_type = $message->data_type;
         my $measurement_identifier = $message->measurement_identifier;
         my $interval = $message->interval;
         my $data_points = $message->data_points;
-        my $time = $message->time;
-	my $start = $message->start;
-	my $end = $message->end;
+        my $time = $sparse_duration ? undef : $message->time;
+	my $start = $sparse_duration ? $message->start : undef;
+	my $end = $sparse_duration ? $message->end : undef;
         my $meta = $message->meta;
 
         # mark this data type as being found
@@ -748,27 +809,14 @@ sub _process_data_messages {
         # never seen this measurement before
         else {
 
-	    my $new_meta = {'meta' => $meta};
-
-	    # default storage type
-	    if ( defined( $time ) ) {
-
-		$new_meta->{'start'} = $time;
-		$new_meta->{'interval'} = $interval;
-	    }
-
-	    # sparse storage type
-	    else {
-
-		$new_meta->{'start'} = $start;
-	    }
-
             # mark this measurement as being found, and include its meta data and start time
-            $unique_measurements->{$data_type->name}{$measurement_identifier} = $new_meta;
+            $unique_measurements->{$data_type->name}{$measurement_identifier} = {'meta' => $meta,
+                                                                                 'start' => $sparse_duration ? $start : $time,
+                                                                                 'interval' => $interval};
         }
 
         # determine proper start and end time of document (if using default storage mode)
-	if ( $data_type->storage eq 'default' ) {
+	if ( !$sparse_duration ) {
 
 	    my $doc_length = $interval * HIGH_RESOLUTION_DOCUMENT_SIZE;
 	    $start = nlowmult( $doc_length, $time );
@@ -778,7 +826,7 @@ sub _process_data_messages {
         # determine the document that this message would belong within
         my $document = GRNOC::TSDS::DataDocument->new( data_type => $data_type,
                                                        measurement_identifier => $measurement_identifier,
-                                                       defined( $interval ) ? ( interval => $interval ) : (),
+						       interval => $interval,
                                                        start => $start,
                                                        end => $end );
 
@@ -1457,127 +1505,130 @@ sub _create_data_document {
     # add this new document as one of the unique documents that will need to get created
     $unique_documents->{$identifier}{$start}{$end} = $document;
 
-    # specify index hint to address occasional performance problems executing this query
-    my $overlaps = $data_collection->find( $query )->hint( 'identifier_1_start_1_end_1' )->fields( {'interval' => 1,
-                                                                                                    'start' => 1,
-                                                                                                    'end' => 1} );
+    if ( $data_type->storage eq 'default' ) {
 
-    # handle every existing overlapping doc, if any
-    while ( my $overlap = $overlaps->next ) {
-
-        my $id = $overlap->{'_id'};
-        my $overlap_interval = $overlap->{'interval'};
-        my $overlap_start = $overlap->{'start'};
-        my $overlap_end = $overlap->{'end'};
-
-        # keep this as one of the docs that will need removed later
-        push( @overlap_ids, $id );
-
-        # determine cache id for this doc
-        my $cache_id = $self->_get_cache_id( type => $data_type->name,
-                                             collection => 'data',
-                                             identifier => $identifier,
-                                             start => $overlap_start,
-                                             end => $overlap_end );
-
-        push( @overlap_cache_ids, $cache_id );
-
-        # grab lock for this doc
-        my $lock_id = $self->_get_lock_id( type => $data_type->name,
-                                           collection => 'data',
-                                           identifier => $identifier,
-                                           start => $overlap_start,
-                                           end => $overlap_end );
-
-        my $lock = $self->locker->lock( $lock_id, LOCK_TIMEOUT ) or die "Can't lock overlapping data doc for $identifier";
-        push( @$acquired_locks, $lock );
-
-        $self->logger->debug( "Found overlapping data document with interval: $overlap_interval start: $overlap_start end: $overlap_end." );
-
-        # create object representation of this duplicate doc
-        my $overlap_doc = GRNOC::TSDS::DataDocument->new( data_type => $data_type,
-                                                          measurement_identifier => $identifier,
-                                                          interval => $overlap_interval,
-                                                          start => $overlap_start,
-                                                          end => $overlap_end );
-
-        # fetch entire doc to grab its data points
-        $overlap_doc->fetch( data => 1 );
-
-        # handle every data point in this overlapping doc
-        my $data_points = $overlap_doc->data_points;
-
-        foreach my $data_point ( @$data_points ) {
-
-            # set the *new* interval we'll be using for this data point
-            $data_point->interval( $interval );
-
-            # determine proper start and end time of *new* document
-            my $doc_length = $interval * HIGH_RESOLUTION_DOCUMENT_SIZE;
-            my $new_start = nlowmult( $doc_length, $data_point->time );
-            my $new_end = $new_start + $doc_length;
-
-            # determine the *new* document that this message would belong within
-            my $new_document = GRNOC::TSDS::DataDocument->new( data_type => $data_type,
-                                                               measurement_identifier => $identifier,
-                                                               interval => $interval,
-                                                               start => $new_start,
-                                                               end => $new_end );
-
-            # mark the document for this data point if one hasn't been set already
-            my $unique_doc = $unique_documents->{$identifier}{$new_start}{$new_end};
-
-            # we've never handled a data point for this document before
-            if ( !$unique_doc ) {
-
-                # mark it as being a new unique document we need to handle
-                $unique_documents->{$identifier}{$new_start}{$new_end} = $new_document;
-                $unique_doc = $unique_documents->{$identifier}{$new_start}{$new_end};
-            }
-
-            # add this as another data point to update/set in the document, if needed
-            $unique_doc->add_data_point( $data_point ) if ( defined $data_point->value );
-        }
+	# specify index hint to address occasional performance problems executing this query
+	my $overlaps = $data_collection->find( $query )->hint( 'identifier_1_start_1_end_1' )->fields( {'interval' => 1,
+													'start' => 1,
+													'end' => 1} );
+	
+	# handle every existing overlapping doc, if any
+	while ( my $overlap = $overlaps->next ) {
+	    
+	    my $id = $overlap->{'_id'};
+	    my $overlap_interval = $overlap->{'interval'};
+	    my $overlap_start = $overlap->{'start'};
+	    my $overlap_end = $overlap->{'end'};
+	    
+	    # keep this as one of the docs that will need removed later
+	    push( @overlap_ids, $id );
+	    
+	    # determine cache id for this doc
+	    my $cache_id = $self->_get_cache_id( type => $data_type->name,
+						 collection => 'data',
+						 identifier => $identifier,
+						 start => $overlap_start,
+						 end => $overlap_end );
+	    
+	    push( @overlap_cache_ids, $cache_id );
+	    
+	    # grab lock for this doc
+	    my $lock_id = $self->_get_lock_id( type => $data_type->name,
+					       collection => 'data',
+					       identifier => $identifier,
+					       start => $overlap_start,
+					       end => $overlap_end );
+	    
+	    my $lock = $self->locker->lock( $lock_id, LOCK_TIMEOUT ) or die "Can't lock overlapping data doc for $identifier";
+	    push( @$acquired_locks, $lock );
+	    
+	    $self->logger->debug( "Found overlapping data document with interval: $overlap_interval start: $overlap_start end: $overlap_end." );
+	    
+	    # create object representation of this duplicate doc
+	    my $overlap_doc = GRNOC::TSDS::DataDocument->new( data_type => $data_type,
+							      measurement_identifier => $identifier,
+							      interval => $overlap_interval,
+							      start => $overlap_start,
+							      end => $overlap_end );
+	    
+	    # fetch entire doc to grab its data points
+	    $overlap_doc->fetch( data => 1 );
+	    
+	    # handle every data point in this overlapping doc
+	    my $data_points = $overlap_doc->data_points;
+	    
+	    foreach my $data_point ( @$data_points ) {
+		
+		# set the *new* interval we'll be using for this data point
+		$data_point->interval( $interval );
+		
+		# determine proper start and end time of *new* document
+		my $doc_length = $interval * HIGH_RESOLUTION_DOCUMENT_SIZE;
+		my $new_start = nlowmult( $doc_length, $data_point->time );
+		my $new_end = $new_start + $doc_length;
+		
+		# determine the *new* document that this message would belong within
+		my $new_document = GRNOC::TSDS::DataDocument->new( data_type => $data_type,
+								   measurement_identifier => $identifier,
+								   interval => $interval,
+								   start => $new_start,
+								   end => $new_end );
+		
+		# mark the document for this data point if one hasn't been set already
+		my $unique_doc = $unique_documents->{$identifier}{$new_start}{$new_end};
+		
+		# we've never handled a data point for this document before
+		if ( !$unique_doc ) {
+		    
+		    # mark it as being a new unique document we need to handle
+		    $unique_documents->{$identifier}{$new_start}{$new_end} = $new_document;
+		    $unique_doc = $unique_documents->{$identifier}{$new_start}{$new_end};
+		}
+		
+		# add this as another data point to update/set in the document, if needed
+		$unique_doc->add_data_point( $data_point ) if ( defined $data_point->value );
+	    }
+	}
     }
-
+    
     # process all new documents that get created as a result of splitting the old document up
     my @measurement_identifiers = keys( %$unique_documents );
-
+    
     foreach my $measurement_identifier ( @measurement_identifiers ) {
-
-        my @starts = keys( %{$unique_documents->{$measurement_identifier}} );
-
-        foreach my $start ( @starts ) {
-
-            my @ends = keys( %{$unique_documents->{$measurement_identifier}{$start}} );
-
-            foreach my $end ( @ends ) {
-
-                my $unique_document = $unique_documents->{$measurement_identifier}{$start}{$end};
-
-                my $bulk = $bulk_creates->{$data_type->name}{'data'};
-
-                # haven't initialized a bulk op for this data type + collection yet
-                if ( !defined( $bulk ) ) {
-
-                    $bulk = $data_collection->initialize_unordered_bulk_op();
-                    $bulk_creates->{$data_type->name}{'data'} = $bulk;
-                }
-
-                $self->logger->debug( "Creating new data document $measurement_identifier / $start / $end." );
-                $unique_document->create( bulk => $bulk );
-            }
-        }
+	
+	my @starts = keys( %{$unique_documents->{$measurement_identifier}} );
+	
+	foreach my $start ( @starts ) {
+	    
+	    my @ends = keys( %{$unique_documents->{$measurement_identifier}{$start}} );
+	    
+	    foreach my $end ( @ends ) {
+		
+		my $unique_document = $unique_documents->{$measurement_identifier}{$start}{$end};
+		
+		my $bulk = $bulk_creates->{$data_type->name}{'data'};
+		
+		# haven't initialized a bulk op for this data type + collection yet
+		if ( !defined( $bulk ) ) {
+		    
+		    $bulk = $data_collection->initialize_unordered_bulk_op();
+		    $bulk_creates->{$data_type->name}{'data'} = $bulk;
+		}
+		
+		$self->logger->debug( "Creating new data document $measurement_identifier / $start / $end." );
+		$unique_document->create( bulk => $bulk );
+	    }
+	}
     }
-
+    
     # remove all old documents that are getting replaced with new docs
     if ( @overlap_ids > 0 ) {
-
-        # first remove from mongo
-        $data_collection->remove( {'_id' => {'$in' => \@overlap_ids}} );
-
-        # also must remove them from our cache since they should no longer exist
-        $self->memcache->delete_multi( @overlap_cache_ids );
+	
+	# first remove from mongo
+	$data_collection->remove( {'_id' => {'$in' => \@overlap_ids}} );
+	
+	# also must remove them from our cache since they should no longer exist
+	$self->memcache->delete_multi( @overlap_cache_ids );
     }
 
     return $document;

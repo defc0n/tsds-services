@@ -4,6 +4,7 @@ use Moo;
 
 use GRNOC::TSDS::Constants;
 use GRNOC::TSDS::DataPoint;
+use GRNOC::TSDS::SparseDurationDataPoint;
 
 use Tie::IxHash;
 use List::Flatten::Recursive;
@@ -72,7 +73,17 @@ sub add_value_types {
     # initialize all the data arrays for every new value type
     foreach my $value_type ( @$value_types ) {
 
-        $updates->{"values.$value_type"} = $self->_get_empty_data_array();
+	# default storage mode
+	if ( $self->data_type->storage eq "default" ) {
+
+	    $updates->{"values.$value_type"} = $self->_get_empty_data_array();
+	}
+
+	# sparse storage mode
+	else {
+
+	    $updates->{"values.$value_type"} = [undef];
+	}
 
         # also mark it as being used
         $self->value_types->{$value_type} = 1;
@@ -107,16 +118,29 @@ sub update {
 
         my $value_type = $data_point->value_type;
         my $value = $data_point->value;
-        my $time = $data_point->time;
 
-        $min = $time if (! defined $min || $time < $min);
-        $max = $time if (! defined $max || $time > $max);
+	# default storage mode
+	if ( $self->data_type->storage eq "default" ) {
 
-        my $indexes = $self->get_indexes( $time );
+	    my $time = $data_point->time;
+	    $min = $time if (! defined $min || $time < $min);
+	    $max = $time if (! defined $max || $time > $max);
 
-        my ( $x, $y, $z ) = @$indexes;
+	    my $indexes = $self->get_indexes( $time );
 
-        $updates->{"values.$value_type.$x.$y.$z"} = $value;
+	    my ( $x, $y, $z ) = @$indexes;
+	    
+	    $updates->{"values.$value_type.$x.$y.$z"} = $value;
+	}
+
+	# sparse storage mode
+	else {
+
+	    $min = $self->start;
+	    $max = $self->end;
+
+	    $updates->{"values.$value_type"} = [$value];
+	}
     }
 
     # doing this as part of a bulk operation?
@@ -152,7 +176,17 @@ sub create {
     # first, initialize all the data arrays for every known value type
     foreach my $value_type ( keys( %$value_types ) ) {
 
-        $values->{$value_type} = $self->_get_empty_data_array();
+	# default storage mode
+	if ( $self->data_type->storage eq "default" ) {
+
+	    $values->{$value_type} = $self->_get_empty_data_array();
+	}
+
+	# sparse storage mode
+	else {
+
+	    $values->{$value_type} = [];
+	}
     }
 
     my $updated_start;
@@ -162,18 +196,32 @@ sub create {
     foreach my $data_point ( @$data_points ) {
 
         my $value_type = $data_point->value_type;
-        my $time = $data_point->time;
         my $value = $data_point->value;
 
-        $updated_start = $time if ( !defined( $updated_start ) || $time < $updated_start );
-        $updated_end = $time if ( !defined( $updated_end ) || $time > $updated_end );
+	# default storage mode
+	if ( $self->data_type->storage eq "default" ) {
 
-        # determine the index(es) of this data point
-        my $indexes = $self->get_indexes( $time );
+	    my $time = $data_point->time;
 
-        my ( $x, $y, $z ) = @$indexes;
+	    $updated_start = $time if ( !defined( $updated_start ) || $time < $updated_start );
+	    $updated_end = $time if ( !defined( $updated_end ) || $time > $updated_end );
 
-        $values->{$value_type}[$x][$y][$z] = $value;
+	    # determine the index(es) of this data point
+	    my $indexes = $self->get_indexes( $time );
+
+	    my ( $x, $y, $z ) = @$indexes;
+
+	    $values->{$value_type}[$x][$y][$z] = $value;
+	}
+
+	# sparse storage mode
+	else {
+
+	    $updated_start = $self->start;
+	    $updated_end = $self->end;
+
+	    $values->{$value_type} = [$value];
+	}
     }
 
     my $now = time();
@@ -216,22 +264,43 @@ sub replace {
     # first, initialize all the data arrays for every known value type
     foreach my $value_type ( keys( %$value_types ) ) {
 
-        $values->{$value_type} = $self->_get_empty_data_array();
+	# default storage mode
+	if ( $self->data_type->storage eq "default" ) {
+
+	    $values->{$value_type} = $self->_get_empty_data_array();
+	}
+	
+	# sparse storage mode
+	else {
+
+	    $values->{$value_type} = [];
+	}
     }
 
     # now handle every data point to determine the proper update for the document
     foreach my $data_point ( @$data_points ) {
 
         my $value_type = $data_point->value_type;
-        my $time = $data_point->time;
         my $value = $data_point->value;
 
-        # determine the index(es) of this data point
-        my $indexes = $self->get_indexes( $time );
+	# default storage mode
+	if ( $self->data_type->storage eq "default" ) {
 
-        my ( $x, $y, $z ) = @$indexes;
+	    my $time = $data_point->time;
 
-        $values->{$value_type}[$x][$y][$z] = $value;
+	    # determine the index(es) of this data point
+	    my $indexes = $self->get_indexes( $time );
+
+	    my ( $x, $y, $z ) = @$indexes;
+	    
+	    $values->{$value_type}[$x][$y][$z] = $value;
+	}
+
+	# sparse storage mode
+	else {
+
+	    $values->{$value_type} = [$value];
+	}
     }
 
     my $query = Tie::IxHash->new( identifier => $self->measurement_identifier,
@@ -294,15 +363,32 @@ sub fetch {
 
             foreach my $value ( @values ) {
 
-                my $data_point = GRNOC::TSDS::DataPoint->new( data_type => $self->data_type,
-                                                              value_type => $value_type,
-                                                              time => $time,
-                                                              value => $value,
-                                                              interval => $self->interval );
+		my $data_point;
 
-                push( @data_points, $data_point);
+		# default storage mode
+		if ( $self->data_type->storage eq 'default' ) {
+		    
+		    $data_point = GRNOC::TSDS::DataPoint->new( data_type => $self->data_type,
+							       value_type => $value_type,
+							       time => $time,
+							       value => $value,
+							       interval => $self->interval );
+		   		    
+		    $time += $self->interval;
+		}
 
-                $time += $self->interval;
+		# sparse storage mode
+		else {
+
+                    $data_point = GRNOC::TSDS::SparseDurationDataPoint->new( data_type => $self->data_type,
+									     value_type => $value_type,
+									     start => $live_data->{'start'},
+									     end => $live_data->{'end'},
+									     value => $value,
+									     interval => $self->interval );
+		}
+
+		push( @data_points, $data_point);
             }
         }
     }

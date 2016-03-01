@@ -1,7 +1,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 2;
+use Test::More tests => 3;
 
 use GRNOC::Config;
 use GRNOC::TSDS::Constants;
@@ -14,8 +14,8 @@ use POSIX qw( ceil );
 use FindBin;
 
 use constant NUM_DATA_POINTS => 8640; # one day
+use constant NUM_SPARSE_DATA_POINTS => 6; # one minute
 use constant MESSAGE_SIZE => 40;
-use constant MAX_VALUE => 10_000_000_000;
 use constant INTERVAL => 10;
 use constant NUM_EVENTS => 1000;
 
@@ -95,10 +95,21 @@ foreach my $node ( @nodes ) {
                                   'network' => 'Test Network'}};
 
         _send( [$message] );
+
+	# send sparse storage message too
+	$message = {'type' => $unit_test_db . "_sparse",
+		    'interval' => INTERVAL,
+		    'start' => 0,
+		    'end' => INTERVAL,
+		    'values' => {'input' => undef,
+				 'output' => undef},
+		    'meta' => {'node' => $node,
+			       'intf' => $intf,
+			       'network' => 'Test Network'}};
+
+	_send( [$message] );
     }
 }
-
-# handle all measurements
 
 my $i=0;
 my $j=0;   
@@ -127,6 +138,56 @@ foreach my $node ( @nodes ) {
                                       'network' => 'Test Network'}};
 
             push( @$messages, $message );
+
+            $time += INTERVAL;
+
+            # send it off to rabbit/mongo
+            if ( @$messages == MESSAGE_SIZE ) {
+
+                _send( $messages );
+
+                $messages = [];
+            }
+        }
+
+        # send any remaining
+        if ( @$messages > 0 ) {
+
+            _send( $messages );
+        }
+    }
+}
+
+# send sparse data next
+$i = 0;
+$j = 0;
+
+foreach my $node ( @nodes ) {
+
+    my @intfs = keys( %{$measurements->{$node}} );
+
+    foreach my $intf ( @intfs ) {
+
+        my $messages = [];
+        my $time = 0;
+
+        for ( 1 .. NUM_SPARSE_DATA_POINTS ) {
+
+            my $input = int(++$i); # deterministic input values
+            my $output = int(++$j); # deterministic output values
+
+	    my $message = {'type' => $unit_test_db . "_sparse",
+			   'interval' => INTERVAL,
+			   'start' => $time,
+			   'end' => $time + INTERVAL,
+			   'values' => {'input' => $input,
+					'output' => $output},
+			   'meta' => {'node' => $node,
+				      'intf' => $intf,
+				      'network' => 'Test Network'}};
+	    
+            push( @$messages, $message );
+
             $time += INTERVAL;
 
             # send it off to rabbit/mongo
@@ -210,6 +271,13 @@ $collection = $database->get_collection( 'event' );
 $num_docs = $collection->count( {} );
 
 is( $num_docs, 42, "42 event documents created" );
+
+$database = $mongo->get_database( $unit_test_db . "_sparse" );
+$collection = $database->get_collection( 'data' );
+
+$total_docs = $num_measurements * NUM_SPARSE_DATA_POINTS;
+$num_docs = $collection->count( {} );
+is( $num_docs, $total_docs, "$total_docs sparse data documents created" );
 
 # re-index all alerts for search
 diag( "need to index alerts for search, root/sudo required" );
