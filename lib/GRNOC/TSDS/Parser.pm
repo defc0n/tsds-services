@@ -1718,7 +1718,8 @@ sub _query_database {
 						       start => $start,
 						       end => $end,
 						       aggregate_interval => $aggregate_interval,
-						       meta_merge_docs => \%meta_merge_docs );
+						       meta_merge_docs => \%meta_merge_docs,
+						       storage => $metadata->{'storage'} );
 
                 foreach my $fixed_doc (@$fixed_docs){
 
@@ -3397,6 +3398,7 @@ sub _fix_document {
     my $full_end = $args{'end'};
     my $aggregate_interval = $args{'aggregate_interval'} || undef;
     my $meta_values = $args{'meta_merge_docs'};    
+    my $storage = $args{'storage'};
 
     # we need to flatten out the multidimensional structure
     # and remove any points that are outside of the queried time
@@ -3457,72 +3459,92 @@ sub _fix_document {
 
 	my @keys = keys %{$clone->{'values'}};
 
-	# We need to unpack the values from their multidimensional array 
 	foreach my $measurement (@keys){
 
 	    my $effective_start = $start;
 
 	    my $values = $clone->{'values'}{$measurement};
 
-	    # See if we can scrape out unneeded parts of the packed
-	    # array before we have to unpack and examine everything
-	    # This assumes a 10x10x10 structure in the document
-	    my $right_splice = @$values - 1;
-	    my $left_splice = 0;
-	    for (my $i = @$values - 1; $i >= 0; $i--){
-		my $start_of_section = $start + ($i * $interval * 10 * 10);
-		my $end_of_section   = $start + (($i+1) * $interval * 10 * 10);
-
-		# If this entire block is earlier than the meta start, we can
-		# stop looking because we're going right to left and know we can
-		# throw this whole thing away
-		if ($end_of_section < $meta_start){
-		    $left_splice = $i + 1;
-		    last;
+	    # handle default storage mode
+	    if ( $storage eq 'default' ) {
+		
+		# We need to unpack the values from their multidimensional array 
+		
+		# See if we can scrape out unneeded parts of the packed
+		# array before we have to unpack and examine everything
+		# This assumes a 10x10x10 structure in the document
+		my $right_splice = @$values - 1;
+		my $left_splice = 0;
+		for (my $i = @$values - 1; $i >= 0; $i--){
+		    my $start_of_section = $start + ($i * $interval * 10 * 10);
+		    my $end_of_section   = $start + (($i+1) * $interval * 10 * 10);
+		    
+		    # If this entire block is earlier than the meta start, we can
+		    # stop looking because we're going right to left and know we can
+		    # throw this whole thing away
+		    if ($end_of_section < $meta_start){
+			$left_splice = $i + 1;
+			last;
+		    }
+		    # If this entire block is later than the meta end, we can
+		    # "decrement" our splice index to remove the unnecessary data
+		    elsif ($start_of_section > $meta_end){
+			$right_splice = $i - 1;
+			next;
+		    }
+		    
+		    # Since we're going old to new, if we haven't thrown away 
+		    # the block for whatever reason we can set the start equal to it
+		    $effective_start = $start_of_section;
 		}
-		# If this entire block is later than the meta end, we can
-		# "decrement" our splice index to remove the unnecessary data
-		elsif ($start_of_section > $meta_end){
-		    $right_splice = $i - 1;
-		    next;
+		
+		@$values = @$values[$left_splice .. $right_splice];
+		
+		# now we're perl'ing with style. This unpacks the remaining
+		# 3d array into a 1d flat array
+		@$values = map {
+		    ref $_ ? map { ref $_ ? map { $_ } @$_ : $_ } @$_ : $_;
+		} @$values;
+		
+		
+		# Now that it's a flat array, we can strip out the exact
+		# points that don't belong in this result set. The above
+		# stripping was coarse grain - this is fine grain.
+		my $start_index = int(($meta_start - $effective_start) / $interval);
+		if ($meta_start < $effective_start){
+		    $start_index = 0;
 		}
-
-		# Since we're going old to new, if we haven't thrown away 
-		# the block for whatever reason we can set the start equal to it
-		$effective_start = $start_of_section;
+		
+		my $end_index   = int(($meta_end - $effective_start) / $interval);
+		if ($end_index > @$values - 1){
+		    $end_index = @$values - 1;
+		}
+		
+		@$values = @$values[$start_index .. $end_index];
+		
+		
+		# add timestamps to all the points now that are good
+		for (my $i = 0; $i < @$values; $i++){
+		    $values->[$i] = [$effective_start + (($start_index + $i) * $interval),
+				     $values->[$i]];
+		}
 	    }
 
-	    @$values = @$values[$left_splice .. $right_splice];
+	    # sparse duration storage mode
+	    else {
 
-	    # now we're perl'ing with style. This unpacks the remaining
-	    # 3d array into a 1d flat array
-	    @$values = map {
-		ref $_ ? map { ref $_ ? map { $_ } @$_ : $_ } @$_ : $_;
-	    } @$values;
+		#$clone->{'values'}{$measurement} = {'start' => $start,
+		#'end' => $end,
+		#'value' => $values};
 
+		# OR
 
-	    # Now that it's a flat array, we can strip out the exact
-	    # points that don't belong in this result set. The above
-	    # stripping was coarse grain - this is fine grain.
-	    my $start_index = int(($meta_start - $effective_start) / $interval);
-	    if ($meta_start < $effective_start){
-		$start_index = 0;
+		#$clone->{'values'}{$measurement} = $values;
+
+		# OR
+
+		$clone->{'values'}{$measurement} = [[$start, $values]];
 	    }
-
-	    my $end_index   = int(($meta_end - $effective_start) / $interval);
-	    if ($end_index > @$values - 1){
-		$end_index = @$values - 1;
-	    }
-
-	    @$values = @$values[$start_index .. $end_index];
-
-
-	    # add timestamps to all the points now that are good
-	    for (my $i = 0; $i < @$values; $i++){
-		$values->[$i] = [$effective_start + (($start_index + $i) * $interval),
-				 $values->[$i]];
-	    }
-
 
 	    # store aggregate data values different to avoid overlap with hires docs
 	    if ( $aggregate_interval ) {

@@ -82,7 +82,7 @@ sub add_value_types {
 	# sparse storage mode
 	else {
 
-	    $updates->{"values.$value_type"} = [undef];
+	    $updates->{"values.$value_type"} = undef;
 	}
 
         # also mark it as being used
@@ -139,7 +139,7 @@ sub update {
 	    $min = $self->start;
 	    $max = $self->end;
 
-	    $updates->{"values.$value_type"} = [$value];
+	    $updates->{"values.$value_type"} = $value;
 	}
     }
 
@@ -185,7 +185,7 @@ sub create {
 	# sparse storage mode
 	else {
 
-	    $values->{$value_type} = [];
+	    $values->{$value_type} = undef;
 	}
     }
 
@@ -220,7 +220,7 @@ sub create {
 	    $updated_start = $self->start;
 	    $updated_end = $self->end;
 
-	    $values->{$value_type} = [$value];
+	    $values->{$value_type} = $value;
 	}
     }
 
@@ -273,7 +273,7 @@ sub replace {
 	# sparse storage mode
 	else {
 
-	    $values->{$value_type} = [];
+	    $values->{$value_type} = undef;
 	}
     }
 
@@ -299,7 +299,7 @@ sub replace {
 	# sparse storage mode
 	else {
 
-	    $values->{$value_type} = [$value];
+	    $values->{$value_type} = undef;
 	}
     }
 
