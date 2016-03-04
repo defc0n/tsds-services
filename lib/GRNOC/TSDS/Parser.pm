@@ -3543,7 +3543,7 @@ sub _fix_document {
 
 		# OR
 
-		$clone->{'values'}{$measurement} = [[$start, $values]];
+		$clone->{'values'}{$measurement} = [[$start, $values, $end]];
 	    }
 
 	    # store aggregate data values different to avoid overlap with hires docs
