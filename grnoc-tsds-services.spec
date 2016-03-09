@@ -249,6 +249,7 @@ rm -rf $RPM_BUILD_ROOT
 %{perl_vendorlib}/GRNOC/TSDS/MongoDB.pm
 %{perl_vendorlib}/GRNOC/TSDS/Parser.pm
 %{perl_vendorlib}/GRNOC/TSDS/Parser/Actions.pm
+%{perl_vendorlib}/GRNOC/TSDS/SparseDurationDataPoint.pm
 %{perl_vendorlib}/GRNOC/TSDS/Upgrade.pm
 %{perl_vendorlib}/GRNOC/TSDS/Upgrade/*.pm
 %{perl_vendorlib}/GRNOC/TSDS/Util/ConfigChooser.pm
@@ -256,6 +257,7 @@ rm -rf $RPM_BUILD_ROOT
 %{perl_vendorlib}/GRNOC/TSDS/Writer/AggregateMessage.pm
 %{perl_vendorlib}/GRNOC/TSDS/Writer/DataMessage.pm
 %{perl_vendorlib}/GRNOC/TSDS/Writer/EventMessage.pm
+%{perl_vendorlib}/GRNOC/TSDS/Writer/SparseDurationMessage.pm
 %{perl_vendorlib}/GRNOC/TSDS/Writer/Worker.pm
 
 %defattr(754, apache, apache, -)
