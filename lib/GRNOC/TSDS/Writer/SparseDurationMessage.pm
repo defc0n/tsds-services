@@ -126,7 +126,7 @@ sub _validate_required_meta_fields {
         next if ( !$data_type_metadata_fields->{$field_name}{'required'} );
 
         # make sure this required meta field was provided
-        if ( !defined( $self->meta->{$field_name} ) ) {
+        if ( !exists( $self->meta->{$field_name} ) ) {
 
             die( "Required meta field $field_name not specified for data type $data_type_name." );
         }
